@@ -39,6 +39,7 @@ int OutputStream::write(const char *buffer, size_t size)
 	if(prepend_ok) {
 		prepending.append(buffer, size);
 	} else {
+		// this is expected to always write everything out
 		os->write((const char*)buffer, size);
 	}
 	return size;
@@ -60,7 +61,7 @@ int OutputStream::printf(const char *format, ...)
 	va_start(args, format);
 
 	size_t size = vsnprintf(buffer, sizeof(buffer), format, args);
-	if (size > sizeof(buffer)) {
+	if (size >= sizeof(buffer)) {
 		// too big for internal buffer so allocate it from heap
 		char *buf= (char *)malloc(size+1);
 		size = vsnprintf(buf, size+1, format, args);
