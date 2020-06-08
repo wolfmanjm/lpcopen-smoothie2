@@ -4,12 +4,14 @@
 #include "../Unity/src/unity.h"
 #include "TestRegistry.h"
 
+#include <cstring>
+
 REGISTER_TEST(GCodeTest,basic)
 {
     GCodeProcessor gp;
     GCodeProcessor::GCodes_t gca;
 
-    const char *g1("G32 X1.2 Y2.3");
+    const char *g1("G32 X1.2 Y-2.3");
     bool ok= gp.parse(g1, gca);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_INT(1, gca.size());
@@ -23,7 +25,7 @@ REGISTER_TEST(GCodeTest,basic)
     TEST_ASSERT_TRUE(gc1.has_arg('Y'));
     TEST_ASSERT_TRUE(!gc1.has_arg('Z'));
     TEST_ASSERT_EQUAL_FLOAT(1.2, gc1.get_arg('X'));
-    TEST_ASSERT_EQUAL_FLOAT(2.3, gc1.get_arg('Y'));
+    TEST_ASSERT_EQUAL_FLOAT(-2.3, gc1.get_arg('Y'));
 }
 
 GCode gc2;
@@ -105,13 +107,14 @@ REGISTER_TEST(GCodeTest, Modal_G1_and_comments) {
     const char *gc= "( this is a comment )X100Y200 ; G23 X0";
     gcodes.clear();
     ok= gp.parse(gc, gcodes);
+    printf("%s\n", gcodes[0].get_error_message());
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_INT(1, gcodes.size());
     auto a = gcodes[0];
     TEST_ASSERT_TRUE(a.has_g());
     TEST_ASSERT_EQUAL_INT(1, a.get_code());
-    TEST_ASSERT_TRUE(a.has_arg('X'));
-    TEST_ASSERT_TRUE(a.has_arg('Y'));
+    TEST_ASSERT_TRUE(a.has_arg('X')); TEST_ASSERT_EQUAL_INT(100, a.get_arg('X'));
+    TEST_ASSERT_TRUE(a.has_arg('Y')); TEST_ASSERT_EQUAL_INT(200, a.get_arg('Y'));
     TEST_ASSERT_FALSE(a.has_arg('Z'));
 }
 
@@ -170,4 +173,37 @@ REGISTER_TEST(GCodeTest,t_code)
     TEST_ASSERT_EQUAL_INT(1, gc1.get_num_args());
     TEST_ASSERT_TRUE(gc1.has_arg('T'));
     TEST_ASSERT_EQUAL_INT(1, gc1.get_arg('T'));
+}
+
+REGISTER_TEST(GCodeTest, illegal_command_word) {
+    GCodeProcessor gp;
+    GCodeProcessor::GCodes_t gcodes;
+    bool ok= gp.parse("1 X0", gcodes);
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_FALSE(gcodes.empty());
+    TEST_ASSERT_TRUE(gcodes.back().has_error());
+    TEST_ASSERT_NOT_NULL(gcodes.back().get_error_message());
+    TEST_ASSERT_TRUE(strlen(gcodes.back().get_error_message()) > 0);
+}
+
+REGISTER_TEST(GCodeTest, illegal_parameter_word) {
+    GCodeProcessor gp;
+    GCodeProcessor::GCodes_t gcodes;
+    bool ok= gp.parse("G1 1.2 X0", gcodes);
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_FALSE(gcodes.empty());
+    TEST_ASSERT_TRUE(gcodes.back().has_error());
+    TEST_ASSERT_NOT_NULL(gcodes.back().get_error_message());
+    TEST_ASSERT_TRUE(strlen(gcodes.back().get_error_message()) > 0);
+}
+
+REGISTER_TEST(GCodeTest, illegal_parameter_word_value) {
+    GCodeProcessor gp;
+    GCodeProcessor::GCodes_t gcodes;
+    bool ok= gp.parse("G1 Y X0", gcodes);
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_FALSE(gcodes.empty());
+    TEST_ASSERT_TRUE(gcodes.back().has_error());
+    TEST_ASSERT_NOT_NULL(gcodes.back().get_error_message());
+    TEST_ASSERT_TRUE(strlen(gcodes.back().get_error_message()) > 0);
 }

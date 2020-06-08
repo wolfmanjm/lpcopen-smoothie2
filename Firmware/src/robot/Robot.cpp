@@ -11,7 +11,7 @@
 #include "main.h"
 #include "TemperatureControl.h"
 #include "SlowTicker.h"
-
+#include "GCodeProcessor.h"
 #include "BaseSolution.h"
 #include "CartesianSolution.h"
 #include "LinearDeltaSolution.h"
@@ -352,10 +352,12 @@ bool Robot::configure(ConfigReader& cr)
         actuators[i]->change_last_milestone(actuator_pos[i]);
     }
 
+    #if MAX_ROBOT_ACTUATORS > 3
     // initialize any extra axis to machine position
     for (size_t i = A_AXIS; i < n_motors; i++) {
         actuators[i]->change_last_milestone(machine_position[i]);
     }
+    #endif
 
     //this->clearToolOffset();
 #ifdef BOARD_PRIMEALPHA
@@ -385,6 +387,8 @@ bool Robot::configure(ConfigReader& cr)
     THEDISPATCHER->add_handler(Dispatcher::GCODE_HANDLER, 21, std::bind(&Robot::handle_gcodes, this, _1, _2));
     THEDISPATCHER->add_handler(Dispatcher::GCODE_HANDLER, 28, std::bind(&Robot::handle_gcodes, this, _1, _2));
 
+    THEDISPATCHER->add_handler(Dispatcher::GCODE_HANDLER, 43, std::bind(&Robot::handle_gcodes, this, _1, _2));
+    THEDISPATCHER->add_handler(Dispatcher::GCODE_HANDLER, 49, std::bind(&Robot::handle_gcodes, this, _1, _2));
     THEDISPATCHER->add_handler(Dispatcher::GCODE_HANDLER, 53, std::bind(&Robot::handle_gcodes, this, _1, _2));
     THEDISPATCHER->add_handler(Dispatcher::GCODE_HANDLER, 54, std::bind(&Robot::handle_gcodes, this, _1, _2));
     THEDISPATCHER->add_handler(Dispatcher::GCODE_HANDLER, 55, std::bind(&Robot::handle_gcodes, this, _1, _2));
@@ -478,6 +482,7 @@ void Robot::periodic_checks()
 }
 #endif
 
+// This may be called in an Timer context, but we can send SPI
 void Robot::on_halt(bool flg)
 {
     halted = flg;
@@ -872,6 +877,31 @@ bool Robot::handle_gcodes(GCode& gcode, OutputStream& os)
 
                 default: handled = false;
             }
+            break;
+
+            case 43:
+                if(gcode.get_subcode() == 1 || gcode.get_subcode() == 2) {
+                    float deltas[3]= {0, 0, 0};
+                    if(gcode.has_arg('X')) deltas[X_AXIS]= to_millimeters(gcode.get_arg('X'));
+                    if(gcode.has_arg('Y')) deltas[Y_AXIS]= to_millimeters(gcode.get_arg('Y'));
+                    if(gcode.has_arg('Z')) deltas[Z_AXIS]= to_millimeters(gcode.get_arg('Z'));
+
+                    float x, y, z;
+                    std::tie(x, y, z) = tool_offset;
+                    if(deltas[X_AXIS] != 0) x += deltas[X_AXIS];
+                    if(deltas[Y_AXIS] != 0) y += deltas[Y_AXIS];
+                    if(deltas[Z_AXIS] != 0) z += deltas[Z_AXIS];
+                    tool_offset = wcs_t(x, y, z);
+
+                    if(gcode.get_subcode() == 2) {
+                        // we also move
+                        delta_move(deltas, this->seek_rate / seconds_per_minute, 3);
+                    }
+                }
+                break;
+
+        case 49:
+            tool_offset = wcs_t(0, 0, 0);
             break;
 
         case 53: // G53 not fully supported. G53 G1 X1 Y1 is ok, but G53 X1 Y1 is not supported
@@ -2019,9 +2049,8 @@ void Robot::setToolOffset(const float offset[3])
 
 float Robot::get_feed_rate() const
 {
-    // TODO modal is currently in gcode processor which is a static in main.cpp
-    // return THEKERNEL->gcode_dispatch->get_modal_command() == 0 ? seek_rate : feed_rate;
-    return feed_rate;
+    // modal is currently in gcode processor which is a static in main.cpp
+    return GCodeProcessor::get_group1_modal_code() == 0 ? seek_rate : feed_rate;
 }
 
 // return a GRBL-like query string for ? command

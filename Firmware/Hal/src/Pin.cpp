@@ -437,7 +437,7 @@ Pin* Pin::from_string(std::string value)
     if(stringutils::toUpper(value.substr(0, 4)) == "GPIO") {
         // grab first integer as GPIO port.
         port = strtol(value.substr(4).c_str(), nullptr, 10);
-        pos = value.find_first_of("[_", 4);
+        pos = value.find_first_of("[_.", 4);
         if(pos == std::string::npos) return nullptr;
 
         // grab pin number
@@ -519,6 +519,11 @@ std::string Pin::to_string() const
         s.append(std::to_string(pin)).append(")");
         if(open_drain) s.push_back('o');
         if(inverting) s.push_back('!');
+        if(get()) {
+        	s.append(":1");
+        }else{
+        	s.append(":0");
+        }
         return s;
 
     } else {

@@ -249,12 +249,14 @@ bool DeltaGridStrategy::probe_grid(int n, float radius, OutputStream& os)
         return true;
     }
 
+    float maxz = -1e6F, minz = 1e6F;
     float initial_z;
     if(!findBed(initial_z)) return false;
 
     float d = ((radius * 2) / (n - 1));
 
     for (int c = 0; c < n; ++c) {
+        std::string scanline;
         float y = -radius + d * c;
         for (int r = 0; r < n; ++r) {
             float x = -radius + d * r;
@@ -265,11 +267,16 @@ bool DeltaGridStrategy::probe_grid(int n, float radius, OutputStream& os)
                 float mm;
                 if(!zprobe->doProbeAt(mm, x, y)) return false;
                 z = zprobe->getProbeHeight() - mm;
+                if(z > maxz) maxz = z;
+                if(z < minz) minz = z;
             }
-            os.printf("%8.4f ", z);
+            char buf[16];
+            size_t s= snprintf(buf, sizeof(buf), "%8.4f ", z);
+            scanline.append(buf, s);
         }
-        os.printf("\n");
+        os.printf("%s\n", scanline.c_str());
     }
+    os.printf("max: %1.4f, min: %1.4f, delta: %1.4f\n", maxz, minz, maxz - minz);
     return true;
 }
 

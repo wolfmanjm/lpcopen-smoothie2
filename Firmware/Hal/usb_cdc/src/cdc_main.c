@@ -130,9 +130,22 @@ USB_INTERFACE_DESCRIPTOR *find_IntfDesc(const uint8_t *pDesc, uint32_t intfClass
 }
 
 // called externally to read/write to the USB CDC channel
+// Expects entire buffer to be written
 size_t write_cdc(const char *buf, size_t len)
 {
-	return vcom_write((uint8_t *)buf, len);
+	size_t sent= 0;
+	while(sent < len) {
+		uint32_t n = vcom_write((uint8_t *)buf+sent, len-sent);
+		sent += n;
+		if(sent < len) {
+			if(!vcom_connected())
+				return -1;
+			// yield some time
+			taskYIELD();
+		}
+	}
+
+	return len;
 }
 
 size_t read_cdc(char *buf, size_t len)
@@ -144,6 +157,12 @@ size_t read_cdc(char *buf, size_t len)
 __attribute__ ((section (".bss.$RAM3"))) static char usb_cdc_buffer[USB_STACK_MEM_SIZE];
 int setup_cdc(xTaskHandle h)
 {
+	// check memory is on 4KB aligned memory
+	if((uint32_t) &usb_cdc_buffer & 0x0FFF) {
+		printf("FATAL: CDC Buffer is not aligned to 4K\n");
+		return 0;
+	}
+
 	USBD_API_INIT_PARAM_T usb_param;
 	USB_CORE_DESCS_T desc;
 	ErrorCode_t ret = LPC_OK;

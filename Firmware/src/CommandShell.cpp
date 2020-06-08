@@ -16,6 +16,7 @@
 #include "FastTicker.h"
 #include "StepTicker.h"
 #include "Adc.h"
+#include "GCodeProcessor.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -319,6 +320,10 @@ bool CommandShell::cp_cmd(std::string& params, OutputStream& os)
                     break;
                 }
             }
+            if(Module::is_halted()) {
+                os.printf("copy aborted\n");
+                break;
+            }
         }
         free(buffer);
 
@@ -475,6 +480,7 @@ bool CommandShell::cat_cmd(std::string& params, OutputStream& os)
             if ( limit > 0 && ++newlines >= limit ) {
                 break;
             }
+            if(Module::is_halted()) break;
         };
         fclose(lp);
         if(delay) {
@@ -628,12 +634,15 @@ static bool get_spindle_state()
 // set or get gpio
 bool CommandShell::gpio_cmd(std::string& params, OutputStream& os)
 {
-    HELP("set and get gpio pins: use GPIO5[14] | gpio5_14 | P4_10 | p4.10 out/in [on/off]");
+    HELP("set and get gpio pins: use GPIO5[14] | gpio5_14 | gpio5.14 | P4_10 | p4.10 out/in [on/off]");
 
     std::string gpio = stringutils::shift_parameter( params );
     std::string dir = stringutils::shift_parameter( params );
 
-    if(gpio.empty()) return false;
+    if(gpio.empty()) {
+        os.printf("incorrect usage\n");
+        return true;
+    }
 
     if(dir.empty() || dir == "in") {
         // read pin
@@ -643,13 +652,16 @@ bool CommandShell::gpio_cmd(std::string& params, OutputStream& os)
             return true;
         }
 
-        os.printf("%s: %d\n", pin.to_string().c_str(), pin.get());
+        os.printf("%s\n", pin.to_string().c_str());
         return true;
     }
 
     if(dir == "out") {
         std::string v = stringutils::shift_parameter( params );
-        if(v.empty()) return false;
+        if(v.empty()) {
+            os.printf("on|off required\n");
+            return true;
+        }
         Pin pin(gpio.c_str(), Pin::AS_OUTPUT);
         if(!pin.connected()) {
             os.printf("Not a valid GPIO\n");
@@ -657,11 +669,12 @@ bool CommandShell::gpio_cmd(std::string& params, OutputStream& os)
         }
         bool b = (v == "on");
         pin.set(b);
-        os.printf("%s: set to %d\n", pin.to_string().c_str(), pin.get());
+        os.printf("%s: was set to %s\n", pin.to_string().c_str(), v.c_str());
         return true;
     }
 
-    return false;
+    os.printf("incorrect usage\n");
+    return true;
 }
 
 bool CommandShell::modules_cmd(std::string& params, OutputStream& os)
@@ -778,9 +791,9 @@ bool CommandShell::get_cmd(std::string& params, OutputStream& os)
 
     } else if (what == "state") {
         // also $G and $I
-        // [G0 G54 G17 G21 G90 G94 M0 M5 M9 T0 F0.]
-        os.printf("[G%d %s G%d G%d G%d G94 M0 M%c M9 T%d F%1.4f S%1.4f]\n",
-                  1, // Dispatcher.getInstance()->get_modal_command(),
+        // [GC:G0 G54 G17 G21 G90 G94 M0 M5 M9 T0 F0.]
+        os.printf("[GC:G%d %s G%d G%d G%d G94 M0 M%c M9 T%d F%1.4f S%1.4f]\n",
+                  GCodeProcessor::get_group1_modal_code(),
                   stringutils::wcs2gcode(Robot::getInstance()->get_current_wcs()).c_str(),
                   Robot::getInstance()->plane_axis_0 == X_AXIS && Robot::getInstance()->plane_axis_1 == Y_AXIS && Robot::getInstance()->plane_axis_2 == Z_AXIS ? 17 :
                   Robot::getInstance()->plane_axis_0 == X_AXIS && Robot::getInstance()->plane_axis_1 == Z_AXIS && Robot::getInstance()->plane_axis_2 == Y_AXIS ? 18 :
@@ -892,7 +905,7 @@ bool CommandShell::grblDP_cmd(std::string& params, OutputStream& os)
                   Robot::getInstance()->from_millimeters(std::get<1>(v[n + 2])),
                   Robot::getInstance()->from_millimeters(std::get<2>(v[n + 2])));
     } else {
-        os.printf("[TL0:%1.4f]\n", Robot::getInstance()->from_millimeters(std::get<2>(v[n + 2])));
+        os.printf("[TLO:%1.4f]\n", Robot::getInstance()->from_millimeters(std::get<2>(v[n + 2])));
     }
 
     // this is the last probe position, updated when a probe completes, also stores the number of steps moved after a homing cycle

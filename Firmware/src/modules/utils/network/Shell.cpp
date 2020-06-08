@@ -46,12 +46,22 @@ static int write_back(shell_t *p_shell, const char *rbuf, size_t len)
         printf("shell: write_back: ERROR magic was bad\n");
         return -1;
     }
-    int n;
-    if ( (n = lwip_write(p_shell->socket, rbuf, len)) < 0) {
-        //close_chargen(p_shell);
-        printf("shell: write_back: error writing\n");
-        p_shell->magic= 1;
-        return -1;
+    // NOTE must write entire buffer
+    size_t sent= 0;
+    while(sent < len) {
+        int n;
+        if ( (n = lwip_write(p_shell->socket, rbuf+sent, len-sent)) < 0) {
+            //close_chargen(p_shell);
+            printf("shell: write_back: error writing\n");
+            p_shell->magic= 1;
+            return -1;
+        }
+        sent += n;
+        // need to yield here if not all sent
+        if(sent < len) {
+            // yield some time
+            taskYIELD();
+        }
     }
     return len;
 }
